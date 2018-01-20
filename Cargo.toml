@@ -1,0 +1,6 @@
+[package]
+name = "i2cdev-rfd77402"
+version = "0.1.0"
+authors = ["Marius <mc.scholtz@gmail.com>"]
+
+[dependencies]
