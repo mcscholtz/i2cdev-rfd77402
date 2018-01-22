@@ -2,6 +2,8 @@
 name = "i2cdev_rfd77402"
 version = "0.1.0"
 authors = ["Marius Scholtz <mc.scholtz@gmail.com>"]
+description = "Driver for the RFD77402 IoT 3D ToF Sensor Module. Written in Rust for Linux"
+license = "MIT/Apache-2.0"
 
 [dependencies]
 i2cdev = "0.3.1"
