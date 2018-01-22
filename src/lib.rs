@@ -22,7 +22,7 @@ use i2cdev::core::*;
 #[allow(unused_imports)]
 use i2cdev::linux::{LinuxI2CDevice, LinuxI2CError};
 
-//Register addresses. TODO: change it to constant values instead of enum
+//This is not used right now, but the code should be updated to use this
 /*
 enum Register 
 {
@@ -49,7 +49,7 @@ enum Register
     PatchMemConfReg = 0x2A,       //used to configure the 2k SRAM as Patch memory or extended memory
 }
 */
-//errors
+/// An enum to hold various errors
 #[derive(Debug)]
 pub enum Rfd77402Error {
     I2CDeviceError(i2cdev::linux::LinuxI2CError),
@@ -59,12 +59,7 @@ pub enum Rfd77402Error {
     UnknownState,
 }
 
-#[derive(PartialEq,Clone)]
-pub enum IoPolicy {
-    Poll,
-    Interrupt
-}
-
+/// This is the structure that is returned when a measurement is made by get_measurement()
 pub struct Measurement {
     pub distance: u16,
     pub error_code: u16,
@@ -73,6 +68,7 @@ pub struct Measurement {
 
 }
 
+/// Converts a LinuxI2CError to a Rfd77402Error
 impl std::convert::From<i2cdev::linux::LinuxI2CError> for Rfd77402Error {
     fn from(error: i2cdev::linux::LinuxI2CError) -> Self
     {
@@ -80,32 +76,38 @@ impl std::convert::From<i2cdev::linux::LinuxI2CError> for Rfd77402Error {
     }
 }
 
+/// This structure defines the handle to driver
 pub struct Rfd77402
 {
-    //sender: Sender<u8>,
+    poll_time: u64,
     new_value: Arc<AtomicBool>,
-    policy: IoPolicy,
     result_reg: Arc<Mutex<u16>>,     //distance and error code and validity
     confidence_reg: Arc<Mutex<u16>>, //pixles and amplitude
 }
 
-
-pub trait New{
-    fn new(&str, IoPolicy) -> Result<Rfd77402,Rfd77402Error>;
+pub trait Poll{
+    fn poll(&str, u64) -> Result<Rfd77402,Rfd77402Error>;
 }
 
 pub trait Measure {
     fn get_measurement(&self) -> Measurement;
 }
 
-impl New for Rfd77402
+impl Poll for Rfd77402
 {
-    fn new(path: &str, io: IoPolicy) -> Result<Rfd77402,Rfd77402Error>//need to add poll/interrupt option
+    /// Creates a handle to the driver using polling to check for data
+    /// path is the path to the i2c device e.g "/dev/i2c-1"
+    /// polltime is the poll interval in milliseconds
+    /// # Examples
+    /// ```
+    /// let dev = Rfd77402::new("/dev/i2c-1", 10).expect("Creating new device failed..");
+    /// ```
+    fn poll(path: &str, polltime: u64) -> Result<Rfd77402,Rfd77402Error>//need to add poll/interrupt option
     {
         let device = Rfd77402 
         {
+            poll_time: polltime,
             new_value: Arc::new(AtomicBool::new(false)),
-            policy: io,
             result_reg: Arc::new(Mutex::new(0)),
             confidence_reg: Arc::new(Mutex::new(0))
         };
@@ -114,9 +116,8 @@ impl New for Rfd77402
         let mut i2cdev = LinuxI2CDevice::new(path, 0x4C).expect("did not get i2c device"); //speed??
         
         //initialize the device
-        //println!("Initializing device...");
         loop{
-            match init(&mut i2cdev, device.policy.clone()) {
+            match init_poll(&mut i2cdev) {
                 Ok(()) => break,
                 _ => {
                     //There was an error resetting. Re-init the i2c bus and try again
@@ -125,9 +126,9 @@ impl New for Rfd77402
                 }
             }  
         }
-        //println!("Initialized device...");
+
         //enter a loop that updats the result_reg and confidence reg every x ms
-        let (res_register, conf_register, updated_value) = (device.result_reg.clone(), device.confidence_reg.clone(), device.new_value.clone());
+        let (res_register, conf_register, updated_value, poll) = (device.result_reg.clone(), device.confidence_reg.clone(), device.new_value.clone(), device.poll_time.clone());
         //this thread need to somehow update the values of result_reg and confidence reg
         thread::spawn(move|| {
             loop {
@@ -147,6 +148,7 @@ impl New for Rfd77402
 
                     updated_value.store(true,Ordering::SeqCst);
                 }
+                sleep(Duration::from_millis(poll));
             }
         });
         //println!("Debug: thread closed");
@@ -156,6 +158,12 @@ impl New for Rfd77402
 
 impl Measure for Rfd77402
 {
+    /// Get the last measurement taken by the device
+    /// # Examples
+    /// ```
+    /// let res = dev.get_measurement();
+    /// println!("dis: {0}, amp: {1}, pix: {2}, err: {3}", res.distance, res.vector_amplitude, res.valid_pixels, res.error_code);
+    /// ```
     fn get_measurement(&self) -> Measurement
     {
         //If there is a new value to read....
@@ -184,11 +192,10 @@ impl Measure for Rfd77402
     }
 }
 
-fn init(mut dev: &mut i2cdev::linux::LinuxI2CDevice, io: IoPolicy) -> Result<(),Rfd77402Error>
+fn init_poll(mut dev: &mut i2cdev::linux::LinuxI2CDevice) -> Result<(),Rfd77402Error>
 {
     //get initial status
     let buf = dev.smbus_read_byte_data(0x06)?;
-    //println!("buf: {}", buf);
     //If device is in an unknown state. Reset it
     while buf & 0x1F != 0x00 
     {
@@ -210,10 +217,7 @@ fn init(mut dev: &mut i2cdev::linux::LinuxI2CDevice, io: IoPolicy) -> Result<(),
     turn_mcpu_off(&mut dev)?;
 
     //configure interrupts if required
-    if io == IoPolicy::Interrupt
-    {
-        //config
-    }
+    
 
     //read module ID, save in structure ?????
     /*
@@ -259,7 +263,6 @@ fn init(mut dev: &mut i2cdev::linux::LinuxI2CDevice, io: IoPolicy) -> Result<(),
     return Ok(())
 }
 
-//Done.
 fn set_standby_mode(dev: &mut i2cdev::linux::LinuxI2CDevice) -> Result<(),Rfd77402Error>
 {
     //println!("putting device in standby mode");
@@ -278,7 +281,7 @@ fn set_standby_mode(dev: &mut i2cdev::linux::LinuxI2CDevice) -> Result<(),Rfd774
     }
     return Err(Rfd77402Error::Timeout);
 }
-//Done.
+
 fn turn_mcpu_off(dev: &mut i2cdev::linux::LinuxI2CDevice) -> Result<(),Rfd77402Error>
 {
     //println!("turning mcpu off");
@@ -329,7 +332,6 @@ fn reset(dev: &mut i2cdev::linux::LinuxI2CDevice) -> Result<(),Rfd77402Error>
     return Err(Rfd77402Error::Timeout);
 }
 
-//Done.
 fn turn_mcpu_on(dev: &mut i2cdev::linux::LinuxI2CDevice)  -> Result<(),Rfd77402Error>
 {
     //println!("turning mcpu on");
@@ -353,7 +355,6 @@ fn turn_mcpu_on(dev: &mut i2cdev::linux::LinuxI2CDevice)  -> Result<(),Rfd77402E
     return Err(Rfd77402Error::Timeout);
 }
 
-//Done. This func waits for data in the results register, then returns
 fn set_measure_mode(dev: &mut i2cdev::linux::LinuxI2CDevice)  -> Result<(),Rfd77402Error>
 {
     //single measure
