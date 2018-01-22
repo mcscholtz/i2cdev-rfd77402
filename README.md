@@ -1,5 +1,7 @@
 Rust i2cdev-rfd77402
 ===========
+[![Version](https://img.shields.io/crates/v/i2cdev_rfd77402.svg)](https://crates.io/crates/i2cdev_rfd77402)
+[![License](https://img.shields.io/crates/l/i2cdev.svg)](https://github.com/mcscholtz/i2cdev-rfd77402/blob/master/README.md#license)
 
 Driver for the RFD77402 IoT 3D ToF Sensor Module. Written in Rust for Linux
 
@@ -45,7 +47,7 @@ License
 -------
 
 ```
-Copyright (c) 2015, Paul Osborne <ospbau@gmail.com>
+Copyright (c) 2018, Marius Scholtz <mc.scholtz@gmail.com>
 
 Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 http://www.apache.org/license/LICENSE-2.0> or the MIT license
